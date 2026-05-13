@@ -7,23 +7,36 @@ const { GIFEncoder, quantize, applyPalette } = require("gifenc");
 // Font registration — try multiple paths
 // ──────────────────────────────────────────────
 let fontLoaded = false;
+let registeredName = "";
 const fontPaths = [
   path.join(__dirname, "..", "fonts", "Inter-Bold.ttf"),
   path.join(process.cwd(), "fonts", "Inter-Bold.ttf"),
-  path.resolve("fonts", "Inter-Bold.ttf"),
   "/var/task/fonts/Inter-Bold.ttf",
 ];
 
 for (const fp of fontPaths) {
   try {
     if (fs.existsSync(fp)) {
-      const fontData = fs.readFileSync(fp);
-      GlobalFonts.register(fontData, "Countdown");
-      fontLoaded = true;
+      // Try registerFromPath first
+      GlobalFonts.registerFromPath(fp, "Countdown");
+      
+      // Check if it actually registered
+      const families = GlobalFonts.families;
+      if (families && families.length > 0) {
+        registeredName = "Countdown";
+        fontLoaded = true;
+      } else {
+        // Fallback: register from buffer with different approach
+        const buf = fs.readFileSync(fp);
+        GlobalFonts.register(buf);
+        // Font registers under its internal name "Inter"
+        registeredName = "Inter";
+        fontLoaded = true;
+      }
       break;
     }
   } catch (e) {
-    // try next
+    // try next path
   }
 }
 
@@ -33,10 +46,11 @@ module.exports = async (req, res) => {
     if (req.query.debug === "1") {
       const info = {
         fontLoaded,
+        registeredName,
         triedPaths: fontPaths.map((fp) => ({ path: fp, exists: fs.existsSync(fp) })),
         cwd: process.cwd(),
         dirname: __dirname,
-        fontsRegistered: GlobalFonts.families.map((f) => f.family),
+        fontsRegistered: GlobalFonts.families,
       };
       return res.status(200).json(info);
     }
@@ -72,7 +86,7 @@ module.exports = async (req, res) => {
     const targetMs = parseTargetDate(date, tzOffset);
 
     // Pick font family name
-    const fontFamily = fontLoaded ? "Countdown" : "sans-serif";
+    const fontFamily = fontLoaded ? registeredName : "sans-serif";
 
     const gif = GIFEncoder();
     const canvas = createCanvas(width, height);
