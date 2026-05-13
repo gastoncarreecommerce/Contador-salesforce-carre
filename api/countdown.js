@@ -3,8 +3,8 @@ const path = require("path");
 const { Resvg } = require("@resvg/resvg-js");
 const { GIFEncoder, quantize, applyPalette } = require("gifenc");
 
-// Load font as base64 for SVG embedding
-let fontBase64 = "";
+// Find font file path
+let fontFilePath = "";
 const fontPaths = [
   path.join(__dirname, "..", "fonts", "Inter-Bold.ttf"),
   path.join(process.cwd(), "fonts", "Inter-Bold.ttf"),
@@ -13,18 +13,25 @@ const fontPaths = [
 for (const fp of fontPaths) {
   try {
     if (fs.existsSync(fp)) {
-      fontBase64 = fs.readFileSync(fp).toString("base64");
+      fontFilePath = fp;
       break;
     }
   } catch (e) {}
+}
+
+// Read font buffer once at cold start
+let fontBuffer = null;
+if (fontFilePath) {
+  fontBuffer = fs.readFileSync(fontFilePath);
 }
 
 module.exports = async (req, res) => {
   try {
     if (req.query.debug === "1") {
       return res.status(200).json({
-        fontLoaded: fontBase64.length > 0,
-        fontBytes: fontBase64.length,
+        fontFound: !!fontFilePath,
+        fontPath: fontFilePath,
+        fontSize: fontBuffer ? fontBuffer.length : 0,
       });
     }
 
@@ -57,17 +64,25 @@ module.exports = async (req, res) => {
     const gif = GIFEncoder();
     const renderNow = Date.now();
 
+    // Resvg options with font loaded
+    const resvgOpts = {
+      fitTo: { mode: "width", value: width },
+      font: {
+        fontBuffers: fontBuffer ? [fontBuffer] : [],
+        loadSystemFonts: false,
+        defaultFontFamily: "Inter",
+      },
+    };
+
     for (let i = 0; i < totalFrames; i++) {
       const adjustedDiff = targetMs - renderNow - i * 1000;
       const time = adjustedDiff > 0 ? msToTime(adjustedDiff) : null;
 
       const svg = buildSVG(width, height, time, bg, fg, accent, label, expired);
 
-      const resvg = new Resvg(svg, {
-        fitTo: { mode: "width", value: width },
-      });
+      const resvg = new Resvg(svg, resvgOpts);
       const pngData = resvg.render();
-      const pixels = pngData.pixels; // Uint8Array RGBA
+      const pixels = pngData.pixels;
 
       const palette = quantize(pixels, 256, { format: "rgba4444" });
       const index = applyPalette(pixels, palette, "rgba4444");
@@ -94,27 +109,16 @@ module.exports = async (req, res) => {
 // ──────────────────────────────────────────────
 
 function buildSVG(w, h, time, bg, fg, accent, label, expiredMsg) {
-  const fontFace = fontBase64
-    ? `<defs><style>
-        @font-face {
-          font-family: 'CF';
-          src: url('data:font/ttf;base64,${fontBase64}') format('truetype');
-          font-weight: bold;
-        }
-      </style></defs>`
-    : "";
-
-  const fontFamily = fontBase64 ? "CF" : "Arial, Helvetica, sans-serif";
+  // Use "Inter" as font-family — resvg resolves it from fontBuffers
+  const ff = "Inter";
 
   if (!time) {
-    // Expired state
     const expSize = Math.round(h * 0.18);
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-      ${fontFace}
-      <rect width="${w}" height="${h}" fill="#${bg}" rx="0"/>
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+      <rect width="${w}" height="${h}" fill="#${bg}"/>
       <text x="${w / 2}" y="${h / 2}" text-anchor="middle" dominant-baseline="central"
-            font-family="${fontFamily}" font-weight="bold" font-size="${expSize}" fill="#${fg}">
-        ${escXml(expiredMsg)}
+            font-family="${ff}" font-weight="bold" font-size="${expSize}" fill="#${fg}">
+        ${esc(expiredMsg)}
       </text>
     </svg>`;
   }
@@ -137,51 +141,42 @@ function buildSVG(w, h, time, bg, fg, accent, label, expiredMsg) {
   const pillTop = h * 0.26;
   const pillW = w * 0.19;
   const pillH = h * 0.50;
-  const pillR = 10;
 
-  let elements = "";
-
-  // Background
-  elements += `<rect width="${w}" height="${h}" fill="#${bg}"/>`;
+  let els = `<rect width="${w}" height="${h}" fill="#${bg}"/>`;
 
   // Label
-  elements += `<text x="${w / 2}" y="${h * 0.05 + labelSize * 0.8}"
-    text-anchor="middle" font-family="${fontFamily}" font-weight="bold"
-    font-size="${labelSize}" fill="#${accent}">${escXml(label)}</text>`;
+  els += `<text x="${w / 2}" y="${h * 0.15}"
+    text-anchor="middle" font-family="${ff}" font-weight="bold"
+    font-size="${labelSize}" fill="#${accent}">${esc(label)}</text>`;
 
-  // Pills + numbers + units
   for (let i = 0; i < 4; i++) {
     const cx = w * positions[i];
-    const px = cx - pillW / 2;
 
     // Pill
-    elements += `<rect x="${px}" y="${pillTop}" width="${pillW}" height="${pillH}"
-      rx="${pillR}" fill="rgba(0,0,0,0.25)"/>`;
+    els += `<rect x="${cx - pillW / 2}" y="${pillTop}" width="${pillW}" height="${pillH}"
+      rx="10" fill="#000" fill-opacity="0.25"/>`;
 
     // Number
-    elements += `<text x="${cx}" y="${pillTop + pillH * 0.52}"
+    els += `<text x="${cx}" y="${pillTop + pillH * 0.55}"
       text-anchor="middle" dominant-baseline="central"
-      font-family="${fontFamily}" font-weight="bold"
+      font-family="${ff}" font-weight="bold"
       font-size="${numSize}" fill="#${fg}">${values[i].num}</text>`;
 
     // Unit
-    elements += `<text x="${cx}" y="${pillTop + pillH + h * 0.03 + unitSize * 0.9}"
-      text-anchor="middle" font-family="${fontFamily}" font-weight="bold"
+    els += `<text x="${cx}" y="${pillTop + pillH + h * 0.12}"
+      text-anchor="middle" font-family="${ff}" font-weight="bold"
       font-size="${unitSize}" fill="#${accent}">${values[i].unit}</text>`;
   }
 
   // Colons
   for (const cp of colonPositions) {
-    elements += `<text x="${w * cp}" y="${pillTop + pillH * 0.48}"
+    els += `<text x="${w * cp}" y="${pillTop + pillH * 0.50}"
       text-anchor="middle" dominant-baseline="central"
-      font-family="${fontFamily}" font-weight="bold"
+      font-family="${ff}" font-weight="bold"
       font-size="${colonSize}" fill="#${fg}">:</text>`;
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-    ${fontFace}
-    ${elements}
-  </svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${els}</svg>`;
 }
 
 // ──────────────────────────────────────────────
@@ -207,6 +202,6 @@ function pad(n) {
   return String(n).padStart(2, "0");
 }
 
-function escXml(str) {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
