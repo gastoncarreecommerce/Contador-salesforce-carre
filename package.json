@@ -1,0 +1,15 @@
+{
+  "name": "countdown-timer-email",
+  "version": "1.0.0",
+  "description": "Countdown timer GIF generator for Salesforce Marketing Cloud emails",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "vercel build",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "gif-encoder-2": "^1.0.5"
+  }
+}

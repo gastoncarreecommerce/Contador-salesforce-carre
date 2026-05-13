@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Countdown Timer — Preview & Configurador</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0f1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      color: #fff;
+      margin-bottom: 0.3rem;
+    }
+
+    .subtitle {
+      color: #7a8ba8;
+      margin-bottom: 2rem;
+      font-size: 0.95rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .field.full { grid-column: 1 / -1; }
+
+    label {
+      font-size: 0.8rem;
+      color: #7a8ba8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    input, select {
+      background: #141b2d;
+      border: 1px solid #2a3554;
+      border-radius: 6px;
+      padding: 0.6rem 0.8rem;
+      color: #fff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, select:focus {
+      border-color: #4a7dff;
+    }
+
+    input[type="color"] {
+      height: 38px;
+      padding: 2px;
+      cursor: pointer;
+    }
+
+    .colors-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1rem;
+    }
+
+    button {
+      background: #004E9A;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.8rem 2rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      width: 100%;
+    }
+
+    button:hover { background: #0066cc; }
+
+    .preview-section {
+      margin-top: 2rem;
+      text-align: center;
+    }
+
+    .preview-section h2 {
+      font-size: 1.1rem;
+      color: #7a8ba8;
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .preview-box {
+      background: #141b2d;
+      border: 1px solid #2a3554;
+      border-radius: 10px;
+      padding: 2rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 240px;
+    }
+
+    .preview-box img {
+      max-width: 100%;
+      border-radius: 4px;
+    }
+
+    .code-section {
+      margin-top: 2rem;
+    }
+
+    .code-section h2 {
+      font-size: 1.1rem;
+      color: #7a8ba8;
+      margin-bottom: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .code-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 0;
+    }
+
+    .code-tab {
+      background: #1a2238;
+      border: 1px solid #2a3554;
+      border-bottom: none;
+      padding: 0.5rem 1.2rem;
+      color: #7a8ba8;
+      cursor: pointer;
+      font-size: 0.85rem;
+      border-radius: 6px 6px 0 0;
+      transition: all 0.2s;
+    }
+
+    .code-tab.active {
+      background: #141b2d;
+      color: #fff;
+    }
+
+    .code-block {
+      background: #141b2d;
+      border: 1px solid #2a3554;
+      border-radius: 0 6px 6px 6px;
+      padding: 1.2rem;
+      font-family: 'Fira Code', 'Consolas', monospace;
+      font-size: 0.85rem;
+      color: #a8c7fa;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      position: relative;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      background: #2a3554;
+      border: none;
+      color: #7a8ba8;
+      padding: 0.3rem 0.7rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      width: auto;
+    }
+
+    .copy-btn:hover { background: #3a4564; color: #fff; }
+
+    .placeholder-text {
+      color: #3a4564;
+      font-style: italic;
+    }
+
+    @media (max-width: 600px) {
+      .grid { grid-template-columns: 1fr; }
+      .colors-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>⏱ Countdown Timer para Emails</h1>
+    <p class="subtitle">Generador de GIF animado para Salesforce Marketing Cloud</p>
+
+    <div class="grid">
+      <div class="field">
+        <label>Fecha objetivo</label>
+        <input type="datetime-local" id="date" value="2026-05-17T23:59">
+      </div>
+      <div class="field">
+        <label>Zona horaria (UTC offset)</label>
+        <select id="tz">
+          <option value="-5">UTC-5 (Colombia, Perú)</option>
+          <option value="-4">UTC-4 (Chile, Venezuela)</option>
+          <option value="-3" selected>UTC-3 (Argentina)</option>
+          <option value="-2">UTC-2</option>
+          <option value="0">UTC+0 (UK)</option>
+          <option value="1">UTC+1 (Europa Central)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="colors-row">
+      <div class="field">
+        <label>Fondo</label>
+        <input type="color" id="bg" value="#004E9A">
+      </div>
+      <div class="field">
+        <label>Texto</label>
+        <input type="color" id="fg" value="#FFFFFF">
+      </div>
+      <div class="field">
+        <label>Acento</label>
+        <input type="color" id="accent" value="#FFD700">
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top: 1rem;">
+      <div class="field">
+        <label>Label superior</label>
+        <input type="text" id="label" value="¡TERMINA EN!" placeholder="¡TERMINA EN!">
+      </div>
+      <div class="field">
+        <label>Mensaje expirado</label>
+        <input type="text" id="expired" value="¡TIEMPO AGOTADO!" placeholder="¡TIEMPO AGOTADO!">
+      </div>
+      <div class="field">
+        <label>Ancho (px)</label>
+        <input type="number" id="w" value="600" min="200" max="800">
+      </div>
+      <div class="field">
+        <label>Alto (px)</label>
+        <input type="number" id="h" value="200" min="100" max="400">
+      </div>
+    </div>
+
+    <button onclick="generate()">Generar Preview</button>
+
+    <div class="preview-section">
+      <h2>Preview</h2>
+      <div class="preview-box">
+        <span class="placeholder-text" id="placeholder">Configurá los parámetros y hacé click en Generar</span>
+        <img id="preview" style="display:none" alt="Countdown preview">
+      </div>
+    </div>
+
+    <div class="code-section">
+      <h2>Código para el email</h2>
+      <div class="code-tabs">
+        <div class="code-tab active" onclick="showTab('html')">HTML</div>
+        <div class="code-tab" onclick="showTab('ampscript')">AMPscript</div>
+      </div>
+      <div class="code-block" id="code-output">
+        <button class="copy-btn" onclick="copyCode()">Copiar</button>
+        <span class="placeholder-text">Generá un preview para ver el código</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUrl = "";
+    let currentTab = "html";
+
+    function stripHash(hex) {
+      return hex.replace("#", "");
+    }
+
+    function buildUrl() {
+      const base = window.location.origin + "/countdown";
+      const params = new URLSearchParams({
+        date: document.getElementById("date").value + ":00",
+        tz: document.getElementById("tz").value,
+        bg: stripHash(document.getElementById("bg").value),
+        fg: stripHash(document.getElementById("fg").value),
+        accent: stripHash(document.getElementById("accent").value),
+        w: document.getElementById("w").value,
+        h: document.getElementById("h").value,
+        label: document.getElementById("label").value,
+        expired: document.getElementById("expired").value,
+        frames: "30",
+      });
+      return base + "?" + params.toString();
+    }
+
+    function generate() {
+      currentUrl = buildUrl();
+      const img = document.getElementById("preview");
+      const placeholder = document.getElementById("placeholder");
+      img.src = currentUrl + "&_t=" + Date.now(); // cache bust
+      img.style.display = "block";
+      placeholder.style.display = "none";
+      updateCode();
+    }
+
+    function updateCode() {
+      const output = document.getElementById("code-output");
+      const w = document.getElementById("w").value;
+      const h = document.getElementById("h").value;
+
+      if (currentTab === "html") {
+        output.innerHTML = `<button class="copy-btn" onclick="copyCode()">Copiar</button>` +
+          escapeHtml(`<img src="${currentUrl}" width="${w}" height="${h}" alt="Countdown Timer" style="display:block; max-width:100%;" />`);
+      } else {
+        output.innerHTML = `<button class="copy-btn" onclick="copyCode()">Copiar</button>` +
+          escapeHtml(
+`%%[
+SET @targetDate = "2026-05-17T23:59:00"
+SET @baseUrl = "${window.location.origin}/countdown"
+SET @imgUrl = CONCAT(@baseUrl, "?date=", @targetDate, "&tz=-3&bg=004E9A&fg=FFFFFF&accent=FFD700&w=${w}&h=${h}&label=¡TERMINA EN!&expired=¡TIEMPO AGOTADO!&frames=30")
+]%%
+<img src="%%=v(@imgUrl)=%%" width="${w}" height="${h}" alt="Countdown Timer" style="display:block; max-width:100%;" />`
+          );
+      }
+    }
+
+    function showTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll(".code-tab").forEach((t) => t.classList.remove("active"));
+      event.target.classList.add("active");
+      if (currentUrl) updateCode();
+    }
+
+    function copyCode() {
+      const code = document.getElementById("code-output").textContent.replace("Copiar", "").trim();
+      navigator.clipboard.writeText(code);
+      const btn = document.querySelector(".copy-btn");
+      btn.textContent = "¡Copiado!";
+      setTimeout(() => (btn.textContent = "Copiar"), 2000);
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+  </script>
+</body>
+</html>
