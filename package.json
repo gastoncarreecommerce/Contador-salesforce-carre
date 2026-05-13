@@ -9,7 +9,7 @@
     "deploy": "vercel --prod"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.63",
+    "@resvg/resvg-js": "^2.6.2",
     "gifenc": "^1.0.3"
   }
 }
