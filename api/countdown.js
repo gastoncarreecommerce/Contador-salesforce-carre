@@ -103,102 +103,102 @@ function h(type, props, ...children) {
   return { type, props: { ...props, children: children.length === 1 ? children[0] : children.length ? children : undefined } };
 }
 
-function buildMarkup(w, h, time, bg, fg, accent, label, expiredMsg) {
-  const numSize = Math.round(h * 0.34);
-  const unitSize = Math.round(h * 0.085);
-  const labelSize = Math.round(h * 0.11);
-  const colonSize = Math.round(h * 0.28);
+function buildMarkup(width, height, time, bg, fg, accent, label, expiredMsg) {
+  const numSize = Math.round(height * 0.34);
+  const unitSize = Math.round(height * 0.085);
+  const labelSize = Math.round(height * 0.11);
+  const colonSize = Math.round(height * 0.28);
 
-  if (!time) {
-    return h("div", {
-      style: {
-        width: `${w}px`, height: `${h}px`, display: "flex",
-        alignItems: "center", justifyContent: "center",
-        backgroundColor: `#${bg}`, color: `#${fg}`,
-        fontFamily: "Inter", fontWeight: 700, fontSize: `${Math.round(h * 0.18)}px`,
-      }
-    }, expiredMsg);
-  }
+  if (!time) {
+    return h("div", {
+      style: {
+        width: `${width}px`, height: `${height}px`, display: "flex",
+        alignItems: "center", justifyContent: "center",
+        backgroundColor: `#${bg}`, color: `#${fg}`,
+        fontFamily: "Inter", fontWeight: 700, fontSize: `${Math.round(height * 0.18)}px`,
+      }
+    }, expiredMsg);
+  }
 
-  const { days, hours, minutes, seconds } = time;
-  const blocks = [
-    { num: pad(days), unit: "DÍAS" },
-    { num: pad(hours), unit: "HRS" },
-    { num: pad(minutes), unit: "MIN" },
-    { num: pad(seconds), unit: "SEG" },
-  ];
+  const { days, hours, minutes, seconds } = time;
+  const blocks = [
+    { num: pad(days), unit: "DÍAS" },
+    { num: pad(hours), unit: "HRS" },
+    { num: pad(minutes), unit: "MIN" },
+    { num: pad(seconds), unit: "SEG" },
+  ];
 
-  const numberBlocks = [];
-  for (let i = 0; i < blocks.length; i++) {
-    // Number pill
-    numberBlocks.push(
-      h("div", {
-        style: {
-          display: "flex", flexDirection: "column", alignItems: "center",
-          justifyContent: "center", gap: "2px",
-        }
-      },
-        h("div", {
-          style: {
-            backgroundColor: "rgba(0,0,0,0.25)", borderRadius: "10px",
-            padding: "8px 14px", display: "flex", alignItems: "center",
-            justifyContent: "center", minWidth: `${Math.round(w * 0.16)}px`,
-          }
-        },
-          h("span", {
-            style: {
-              color: `#${fg}`, fontSize: `${numSize}px`,
-              fontFamily: "Inter", fontWeight: 700, lineHeight: 1,
-            }
-          }, blocks[i].num)
-        ),
-        h("span", {
-          style: {
-            color: `#${accent}`, fontSize: `${unitSize}px`,
-            fontFamily: "Inter", fontWeight: 700, marginTop: "4px",
-          }
-        }, blocks[i].unit)
-      )
-    );
+  const numberBlocks = [];
+  for (let i = 0; i < blocks.length; i++) {
+    // Number pill
+    numberBlocks.push(
+      h("div", {
+        style: {
+          display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", gap: "2px",
+        }
+      },
+        h("div", {
+          style: {
+            backgroundColor: "rgba(0,0,0,0.25)", borderRadius: "10px",
+            padding: "8px 14px", display: "flex", alignItems: "center",
+            justifyContent: "center", minWidth: `${Math.round(width * 0.16)}px`,
+          }
+        },
+          h("span", {
+            style: {
+              color: `#${fg}`, fontSize: `${numSize}px`,
+              fontFamily: "Inter", fontWeight: 700, lineHeight: 1,
+            }
+          }, blocks[i].num)
+        ),
+        h("span", {
+          style: {
+            color: `#${accent}`, fontSize: `${unitSize}px`,
+            fontFamily: "Inter", fontWeight: 700, marginTop: "4px",
+          }
+        }, blocks[i].unit)
+      )
+    );
 
-    // Colon (except after last)
-    if (i < blocks.length - 1) {
-      numberBlocks.push(
-        h("span", {
-          style: {
-            color: `#${fg}`, fontSize: `${colonSize}px`,
-            fontFamily: "Inter", fontWeight: 700, lineHeight: 1,
-            marginBottom: `${Math.round(h * 0.08)}px`,
-            padding: "0 2px",
-          }
-        }, ":")
-      );
-    }
-  }
+    // Colon (except after last)
+    if (i < blocks.length - 1) {
+      numberBlocks.push(
+        h("span", {
+          style: {
+            color: `#${fg}`, fontSize: `${colonSize}px`,
+            fontFamily: "Inter", fontWeight: 700, lineHeight: 1,
+            marginBottom: `${Math.round(height * 0.08)}px`,
+            padding: "0 2px",
+          }
+        }, ":")
+      );
+    }
+  }
 
-  return h("div", {
-    style: {
-      width: `${w}px`, height: `${h}px`, display: "flex",
-      flexDirection: "column", alignItems: "center", justifyContent: "center",
-      backgroundColor: `#${bg}`, fontFamily: "Inter",
-      gap: "0px", padding: "0",
-    }
-  },
-    // Label
-    h("span", {
-      style: {
-        color: `#${accent}`, fontSize: `${labelSize}px`,
-        fontWeight: 700, marginBottom: "6px",
-      }
-    }, label),
-    // Numbers row
-    h("div", {
-      style: {
-        display: "flex", alignItems: "center", justifyContent: "center",
-        gap: "4px",
-      }
-    }, ...numberBlocks)
-  );
+  return h("div", {
+    style: {
+      width: `${width}px`, height: `${height}px`, display: "flex",
+      flexDirection: "column", alignItems: "center", justifyContent: "center",
+      backgroundColor: `#${bg}`, fontFamily: "Inter",
+      gap: "0px", padding: "0",
+    }
+  },
+    // Label
+    h("span", {
+      style: {
+        color: `#${accent}`, fontSize: `${labelSize}px`,
+        fontWeight: 700, marginBottom: "6px",
+      }
+    }, label),
+    // Numbers row
+    h("div", {
+      style: {
+        display: "flex", alignItems: "center", justifyContent: "center",
+        gap: "4px",
+      }
+    }, ...numberBlocks)
+  );
 }
 
 // ──────────────────────────────────────────────
