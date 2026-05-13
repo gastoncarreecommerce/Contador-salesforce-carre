@@ -1,88 +1,77 @@
 const fs = require("fs");
 const path = require("path");
+const satori = require("satori");
 const { Resvg } = require("@resvg/resvg-js");
 const { GIFEncoder, quantize, applyPalette } = require("gifenc");
 
-// Find font file path
-let fontFilePath = "";
-const fontPaths = [
+// Load font buffer at cold start
+let fontData = null;
+const tryPaths = [
   path.join(__dirname, "..", "fonts", "Inter-Bold.ttf"),
   path.join(process.cwd(), "fonts", "Inter-Bold.ttf"),
   "/var/task/fonts/Inter-Bold.ttf",
 ];
-for (const fp of fontPaths) {
+for (const fp of tryPaths) {
   try {
     if (fs.existsSync(fp)) {
-      fontFilePath = fp;
+      fontData = fs.readFileSync(fp);
       break;
     }
   } catch (e) {}
 }
 
-// Read font buffer once at cold start
-let fontBuffer = null;
-if (fontFilePath) {
-  fontBuffer = fs.readFileSync(fontFilePath);
-}
-
 module.exports = async (req, res) => {
   try {
     if (req.query.debug === "1") {
-      return res.status(200).json({
-        fontFound: !!fontFilePath,
-        fontPath: fontFilePath,
-        fontSize: fontBuffer ? fontBuffer.length : 0,
-      });
+      return res.status(200).json({ fontLoaded: !!fontData, fontSize: fontData?.length });
     }
 
     const {
-      date,
-      tz = "-3",
-      bg = "004E9A",
-      fg = "FFFFFF",
-      accent = "FFD700",
-      w = "600",
-      h = "200",
-      frames = "30",
-      label = "TERMINA EN!",
-      expired = "TIEMPO AGOTADO!",
+      date, tz = "-3", bg = "004E9A", fg = "FFFFFF", accent = "FFD700",
+      w = "600", h = "200", frames = "30",
+      label = "TERMINA EN!", expired = "TIEMPO AGOTADO!",
     } = req.query;
 
     if (!date) {
-      return res.status(400).json({
-        error: "Missing 'date' parameter",
-        usage: "GET /countdown?date=2026-05-17T23:59:00&tz=-3",
-      });
+      return res.status(400).json({ error: "Missing 'date' param", usage: "/countdown?date=2026-05-17T23:59:00&tz=-3" });
     }
 
-    const width = parseInt(w, 10);
-    const height = parseInt(h, 10);
-    const totalFrames = Math.min(parseInt(frames, 10), 60);
+    const width = parseInt(w);
+    const height = parseInt(h);
+    const totalFrames = Math.min(parseInt(frames), 60);
     const tzOffset = parseFloat(tz);
     const targetMs = parseTargetDate(date, tzOffset);
-
-    const gif = GIFEncoder();
     const renderNow = Date.now();
 
-    // Resvg options with font loaded
-    const resvgOpts = {
-      fitTo: { mode: "width", value: width },
-      font: {
-        fontBuffers: fontBuffer ? [fontBuffer] : [],
-        loadSystemFonts: false,
-        defaultFontFamily: "Inter",
-      },
+    const satoriOpts = {
+      width,
+      height,
+      fonts: [
+        {
+          name: "Inter",
+          data: fontData,
+          weight: 700,
+          style: "normal",
+        },
+      ],
     };
 
+    const gif = GIFEncoder();
+
     for (let i = 0; i < totalFrames; i++) {
-      const adjustedDiff = targetMs - renderNow - i * 1000;
-      const time = adjustedDiff > 0 ? msToTime(adjustedDiff) : null;
+      const diff = targetMs - renderNow - i * 1000;
+      const time = diff > 0 ? msToTime(diff) : null;
 
-      const svg = buildSVG(width, height, time, bg, fg, accent, label, expired);
+      // Satori takes a React-like element tree (plain objects)
+      const markup = buildMarkup(width, height, time, bg, fg, accent, label, expired);
 
-      const resvg = new Resvg(svg, resvgOpts);
-      const pngData = resvg.render();
-      const pixels = pngData.pixels;
+      // satori returns SVG string
+      const svg = await satori.default(markup, satoriOpts);
+
+      // resvg rasterizes SVG to RGBA pixels
+      const resvg = new Resvg(svg, { fitTo: { mode: "width", value: width } });
+      const rendered = resvg.render();
+      const pixels = rendered.pixels;
 
       const palette = quantize(pixels, 256, { format: "rgba4444" });
       const index = applyPalette(pixels, palette, "rgba4444");
@@ -105,78 +94,111 @@ module.exports = async (req, res) => {
 };
 
 // ──────────────────────────────────────────────
-// SVG Builder
+// Markup builder (satori virtual DOM)
+// Satori uses React-like objects: { type, props, children }
+// We use the h() helper below
 // ──────────────────────────────────────────────
 
-function buildSVG(w, h, time, bg, fg, accent, label, expiredMsg) {
-  // Use "Inter" as font-family — resvg resolves it from fontBuffers
-  const ff = "Inter";
+function h(type, props, ...children) {
+  return { type, props: { ...props, children: children.length === 1 ? children[0] : children.length ? children : undefined } };
+}
+
+function buildMarkup(w, h, time, bg, fg, accent, label, expiredMsg) {
+  const numSize = Math.round(h * 0.34);
+  const unitSize = Math.round(h * 0.085);
+  const labelSize = Math.round(h * 0.11);
+  const colonSize = Math.round(h * 0.28);
 
   if (!time) {
-    const expSize = Math.round(h * 0.18);
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
-      <rect width="${w}" height="${h}" fill="#${bg}"/>
-      <text x="${w / 2}" y="${h / 2}" text-anchor="middle" dominant-baseline="central"
-            font-family="${ff}" font-weight="bold" font-size="${expSize}" fill="#${fg}">
-        ${esc(expiredMsg)}
-      </text>
-    </svg>`;
+    return h("div", {
+      style: {
+        width: `${w}px`, height: `${h}px`, display: "flex",
+        alignItems: "center", justifyContent: "center",
+        backgroundColor: `#${bg}`, color: `#${fg}`,
+        fontFamily: "Inter", fontWeight: 700, fontSize: `${Math.round(h * 0.18)}px`,
+      }
+    }, expiredMsg);
   }
 
   const { days, hours, minutes, seconds } = time;
-  const labelSize = Math.round(h * 0.12);
-  const numSize = Math.round(h * 0.36);
-  const unitSize = Math.round(h * 0.09);
-  const colonSize = Math.round(h * 0.30);
-
-  const positions = [0.125, 0.375, 0.625, 0.875];
-  const colonPositions = [0.25, 0.50, 0.75];
-  const values = [
+  const blocks = [
     { num: pad(days), unit: "DÍAS" },
     { num: pad(hours), unit: "HRS" },
     { num: pad(minutes), unit: "MIN" },
     { num: pad(seconds), unit: "SEG" },
   ];
 
-  const pillTop = h * 0.26;
-  const pillW = w * 0.19;
-  const pillH = h * 0.50;
+  const numberBlocks = [];
+  for (let i = 0; i < blocks.length; i++) {
+    // Number pill
+    numberBlocks.push(
+      h("div", {
+        style: {
+          display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", gap: "2px",
+        }
+      },
+        h("div", {
+          style: {
+            backgroundColor: "rgba(0,0,0,0.25)", borderRadius: "10px",
+            padding: "8px 14px", display: "flex", alignItems: "center",
+            justifyContent: "center", minWidth: `${Math.round(w * 0.16)}px`,
+          }
+        },
+          h("span", {
+            style: {
+              color: `#${fg}`, fontSize: `${numSize}px`,
+              fontFamily: "Inter", fontWeight: 700, lineHeight: 1,
+            }
+          }, blocks[i].num)
+        ),
+        h("span", {
+          style: {
+            color: `#${accent}`, fontSize: `${unitSize}px`,
+            fontFamily: "Inter", fontWeight: 700, marginTop: "4px",
+          }
+        }, blocks[i].unit)
+      )
+    );
 
-  let els = `<rect width="${w}" height="${h}" fill="#${bg}"/>`;
-
-  // Label
-  els += `<text x="${w / 2}" y="${h * 0.15}"
-    text-anchor="middle" font-family="${ff}" font-weight="bold"
-    font-size="${labelSize}" fill="#${accent}">${esc(label)}</text>`;
-
-  for (let i = 0; i < 4; i++) {
-    const cx = w * positions[i];
-
-    // Pill
-    els += `<rect x="${cx - pillW / 2}" y="${pillTop}" width="${pillW}" height="${pillH}"
-      rx="10" fill="#000" fill-opacity="0.25"/>`;
-
-    // Number
-    els += `<text x="${cx}" y="${pillTop + pillH * 0.55}"
-      text-anchor="middle" dominant-baseline="central"
-      font-family="${ff}" font-weight="bold"
-      font-size="${numSize}" fill="#${fg}">${values[i].num}</text>`;
-
-    // Unit
-    els += `<text x="${cx}" y="${pillTop + pillH + h * 0.12}"
-      text-anchor="middle" font-family="${ff}" font-weight="bold"
-      font-size="${unitSize}" fill="#${accent}">${values[i].unit}</text>`;
+    // Colon (except after last)
+    if (i < blocks.length - 1) {
+      numberBlocks.push(
+        h("span", {
+          style: {
+            color: `#${fg}`, fontSize: `${colonSize}px`,
+            fontFamily: "Inter", fontWeight: 700, lineHeight: 1,
+            marginBottom: `${Math.round(h * 0.08)}px`,
+            padding: "0 2px",
+          }
+        }, ":")
+      );
+    }
   }
 
-  // Colons
-  for (const cp of colonPositions) {
-    els += `<text x="${w * cp}" y="${pillTop + pillH * 0.50}"
-      text-anchor="middle" dominant-baseline="central"
-      font-family="${ff}" font-weight="bold"
-      font-size="${colonSize}" fill="#${fg}">:</text>`;
-  }
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${els}</svg>`;
+  return h("div", {
+    style: {
+      width: `${w}px`, height: `${h}px`, display: "flex",
+      flexDirection: "column", alignItems: "center", justifyContent: "center",
+      backgroundColor: `#${bg}`, fontFamily: "Inter",
+      gap: "0px", padding: "0",
+    }
+  },
+    // Label
+    h("span", {
+      style: {
+        color: `#${accent}`, fontSize: `${labelSize}px`,
+        fontWeight: 700, marginBottom: "6px",
+      }
+    }, label),
+    // Numbers row
+    h("div", {
+      style: {
+        display: "flex", alignItems: "center", justifyContent: "center",
+        gap: "4px",
+      }
+    }, ...numberBlocks)
+  );
 }
 
 // ──────────────────────────────────────────────
@@ -200,8 +222,4 @@ function msToTime(ms) {
 
 function pad(n) {
   return String(n).padStart(2, "0");
-}
-
-function esc(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
