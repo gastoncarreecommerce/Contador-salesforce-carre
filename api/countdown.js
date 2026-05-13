@@ -1,143 +1,10 @@
-const { createCanvas } = require("@napi-rs/canvas");
+const path = require("path");
+const { createCanvas, GlobalFonts } = require("@napi-rs/canvas");
 const { GIFEncoder, quantize, applyPalette } = require("gifenc");
 
-// ──────────────────────────────────────────────
-// 7-segment style digit maps (5 wide x 7 tall)
-// 1 = filled, 0 = empty
-// ──────────────────────────────────────────────
-const DIGITS = {
-  "0": [
-    [1,1,1,1,1],
-    [1,0,0,0,1],
-    [1,0,0,0,1],
-    [1,0,0,0,1],
-    [1,0,0,0,1],
-    [1,0,0,0,1],
-    [1,1,1,1,1],
-  ],
-  "1": [
-    [0,0,1,0,0],
-    [0,1,1,0,0],
-    [0,0,1,0,0],
-    [0,0,1,0,0],
-    [0,0,1,0,0],
-    [0,0,1,0,0],
-    [0,1,1,1,0],
-  ],
-  "2": [
-    [1,1,1,1,1],
-    [0,0,0,0,1],
-    [0,0,0,0,1],
-    [1,1,1,1,1],
-    [1,0,0,0,0],
-    [1,0,0,0,0],
-    [1,1,1,1,1],
-  ],
-  "3": [
-    [1,1,1,1,1],
-    [0,0,0,0,1],
-    [0,0,0,0,1],
-    [1,1,1,1,1],
-    [0,0,0,0,1],
-    [0,0,0,0,1],
-    [1,1,1,1,1],
-  ],
-  "4": [
-    [1,0,0,0,1],
-    [1,0,0,0,1],
-    [1,0,0,0,1],
-    [1,1,1,1,1],
-    [0,0,0,0,1],
-    [0,0,0,0,1],
-    [0,0,0,0,1],
-  ],
-  "5": [
-    [1,1,1,1,1],
-    [1,0,0,0,0],
-    [1,0,0,0,0],
-    [1,1,1,1,1],
-    [0,0,0,0,1],
-    [0,0,0,0,1],
-    [1,1,1,1,1],
-  ],
-  "6": [
-    [1,1,1,1,1],
-    [1,0,0,0,0],
-    [1,0,0,0,0],
-    [1,1,1,1,1],
-    [1,0,0,0,1],
-    [1,0,0,0,1],
-    [1,1,1,1,1],
-  ],
-  "7": [
-    [1,1,1,1,1],
-    [0,0,0,0,1],
-    [0,0,0,0,1],
-    [0,0,0,1,0],
-    [0,0,1,0,0],
-    [0,0,1,0,0],
-    [0,0,1,0,0],
-  ],
-  "8": [
-    [1,1,1,1,1],
-    [1,0,0,0,1],
-    [1,0,0,0,1],
-    [1,1,1,1,1],
-    [1,0,0,0,1],
-    [1,0,0,0,1],
-    [1,1,1,1,1],
-  ],
-  "9": [
-    [1,1,1,1,1],
-    [1,0,0,0,1],
-    [1,0,0,0,1],
-    [1,1,1,1,1],
-    [0,0,0,0,1],
-    [0,0,0,0,1],
-    [1,1,1,1,1],
-  ],
-  ":": [
-    [0,0,0,0,0],
-    [0,0,1,0,0],
-    [0,0,1,0,0],
-    [0,0,0,0,0],
-    [0,0,1,0,0],
-    [0,0,1,0,0],
-    [0,0,0,0,0],
-  ],
-};
-
-// Small 3x5 font for labels
-const SMALL_CHARS = {
-  "D": [[1,1,0],[1,0,1],[1,0,1],[1,0,1],[1,1,0]],
-  "I": [[1,1,1],[0,1,0],[0,1,0],[0,1,0],[1,1,1]],
-  "A": [[0,1,0],[1,0,1],[1,1,1],[1,0,1],[1,0,1]],
-  "S": [[0,1,1],[1,0,0],[0,1,0],[0,0,1],[1,1,0]],
-  "H": [[1,0,1],[1,0,1],[1,1,1],[1,0,1],[1,0,1]],
-  "O": [[0,1,0],[1,0,1],[1,0,1],[1,0,1],[0,1,0]],
-  "R": [[1,1,0],[1,0,1],[1,1,0],[1,0,1],[1,0,1]],
-  "M": [[1,0,1],[1,1,1],[1,1,1],[1,0,1],[1,0,1]],
-  "N": [[1,0,1],[1,1,1],[1,1,1],[1,0,1],[1,0,1]],
-  "E": [[1,1,1],[1,0,0],[1,1,0],[1,0,0],[1,1,1]],
-  "G": [[0,1,1],[1,0,0],[1,0,1],[1,0,1],[0,1,1]],
-  "T": [[1,1,1],[0,1,0],[0,1,0],[0,1,0],[0,1,0]],
-  "L": [[1,0,0],[1,0,0],[1,0,0],[1,0,0],[1,1,1]],
-  "F": [[1,1,1],[1,0,0],[1,1,0],[1,0,0],[1,0,0]],
-  "!": [[0,1,0],[0,1,0],[0,1,0],[0,0,0],[0,1,0]],
-  " ": [[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
-  "P": [[1,1,0],[1,0,1],[1,1,0],[1,0,0],[1,0,0]],
-  "C": [[0,1,1],[1,0,0],[1,0,0],[1,0,0],[0,1,1]],
-  "U": [[1,0,1],[1,0,1],[1,0,1],[1,0,1],[0,1,0]],
-  "V": [[1,0,1],[1,0,1],[1,0,1],[0,1,0],[0,1,0]],
-  "W": [[1,0,1],[1,0,1],[1,1,1],[1,1,1],[1,0,1]],
-  "X": [[1,0,1],[1,0,1],[0,1,0],[1,0,1],[1,0,1]],
-  "Y": [[1,0,1],[1,0,1],[0,1,0],[0,1,0],[0,1,0]],
-  "Z": [[1,1,1],[0,0,1],[0,1,0],[1,0,0],[1,1,1]],
-  "B": [[1,1,0],[1,0,1],[1,1,0],[1,0,1],[1,1,0]],
-  "J": [[0,0,1],[0,0,1],[0,0,1],[1,0,1],[0,1,0]],
-  "K": [[1,0,1],[1,1,0],[1,0,0],[1,1,0],[1,0,1]],
-  "Q": [[0,1,0],[1,0,1],[1,0,1],[1,1,1],[0,1,1]],
-};
+// Register bundled font
+const fontPath = path.join(__dirname, "..", "fonts", "Inter-Bold.ttf");
+GlobalFonts.registerFromPath(fontPath, "InterBold");
 
 /**
  * Countdown Timer GIF Generator for SFMC Emails
@@ -154,8 +21,8 @@ module.exports = async (req, res) => {
       w = "600",
       h = "200",
       frames = "30",
-      label = "TERMINA EN",
-      expired = "TIEMPO AGOTADO",
+      label = "TERMINA EN!",
+      expired = "TIEMPO AGOTADO!",
     } = req.query;
 
     if (!date) {
@@ -188,10 +55,10 @@ module.exports = async (req, res) => {
       ctx.fillRect(0, 0, width, height);
 
       if (adjustedDiff <= 0) {
-        drawBitmapText(ctx, expired, width / 2, height / 2, Math.floor(height / 20), 1, fgColor, "center");
+        drawExpired(ctx, width, height, fgColor, expired);
       } else {
         const time = msToTime(adjustedDiff);
-        drawFrame(ctx, width, height, time, fgColor, accentColor, bgHex, label);
+        drawCountdown(ctx, width, height, time, fgColor, accentColor, label);
       }
 
       // Encode frame
@@ -218,126 +85,77 @@ module.exports = async (req, res) => {
 };
 
 // ──────────────────────────────────────────────
-// Main drawing
+// Drawing functions
 // ──────────────────────────────────────────────
 
-function drawFrame(ctx, w, h, time, fgColor, accentColor, bgHex, label) {
+function drawCountdown(ctx, w, h, time, fgColor, accentColor, label) {
   const { days, hours, minutes, seconds } = time;
 
-  // Layout constants
-  const pixelSize = Math.max(2, Math.floor(h / 28)); // size of each "pixel" in digit
-  const digitW = 5 * pixelSize;
-  const digitH = 7 * pixelSize;
-  const colonW = 5 * pixelSize;
-  const gap = Math.floor(pixelSize * 1.5); // gap between digit pairs
-  const pairGap = Math.floor(pixelSize * 0.5); // gap between two digits in a pair
+  // Top label
+  const labelSize = Math.round(h * 0.11);
+  ctx.fillStyle = accentColor;
+  ctx.font = `${labelSize}px InterBold`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText(label, w / 2, h * 0.05);
 
-  // Total width: 4 pairs of 2 digits + 3 colons + gaps
-  const totalW = 4 * (2 * digitW + pairGap) + 3 * colonW + 6 * gap;
-  const startX = Math.floor((w - totalW) / 2);
-  const startY = Math.floor(h * 0.25);
+  // Numbers
+  const numSize = Math.round(h * 0.35);
+  const unitSize = Math.round(h * 0.08);
 
-  // Draw label at top
-  const labelPixel = Math.max(1, Math.floor(pixelSize * 0.5));
-  drawBitmapText(ctx, label, w / 2, h * 0.08, labelPixel, 1, accentColor, "center");
-
-  const pairs = [
-    String(days).padStart(2, "0"),
-    String(hours).padStart(2, "0"),
-    String(minutes).padStart(2, "0"),
-    String(seconds).padStart(2, "0"),
+  const positions = [0.125, 0.375, 0.625, 0.875];
+  const values = [
+    { num: String(days).padStart(2, "0"), unit: "DÍAS" },
+    { num: String(hours).padStart(2, "0"), unit: "HORAS" },
+    { num: String(minutes).padStart(2, "0"), unit: "MIN" },
+    { num: String(seconds).padStart(2, "0"), unit: "SEG" },
   ];
-  const labels = ["DIAS", "HORAS", "MIN", "SEG"];
 
-  let curX = startX;
+  const numY = h * 0.28;
+  const pillW = w * 0.19;
+  const pillH = h * 0.48;
 
-  for (let p = 0; p < 4; p++) {
-    const d1 = pairs[p][0];
-    const d2 = pairs[p][1];
+  for (let i = 0; i < 4; i++) {
+    const cx = w * positions[i];
 
     // Pill background
-    const pillPad = Math.floor(pixelSize * 0.8);
-    const pillW = 2 * digitW + pairGap + 2 * pillPad;
-    const pillH = digitH + 2 * pillPad;
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    roundRect(ctx, curX - pillPad, startY - pillPad, pillW, pillH, pixelSize);
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    roundRect(ctx, cx - pillW / 2, numY, pillW, pillH, 10);
     ctx.fill();
 
-    // First digit
-    drawDigit(ctx, d1, curX, startY, pixelSize, fgColor);
-    curX += digitW + pairGap;
+    // Number
+    ctx.fillStyle = fgColor;
+    ctx.font = `${numSize}px InterBold`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(values[i].num, cx, numY + pillH * 0.45);
 
-    // Second digit
-    drawDigit(ctx, d2, curX, startY, pixelSize, fgColor);
-    curX += digitW + pillPad;
-
-    // Unit label below
-    const labelY = startY + digitH + Math.floor(pixelSize * 1.5);
-    const labelCenterX = curX - pillPad - pillW / 2;
-    drawBitmapText(ctx, labels[p], labelCenterX, labelY, Math.max(1, Math.floor(pixelSize * 0.4)), 1, accentColor, "center");
-
-    // Colon separator (except after last)
-    if (p < 3) {
-      curX += gap;
-      drawDigit(ctx, ":", curX, startY, pixelSize, fgColor);
-      curX += colonW + gap;
-    }
+    // Unit label
+    ctx.fillStyle = accentColor;
+    ctx.font = `${unitSize}px InterBold`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(values[i].unit, cx, numY + pillH + h * 0.03);
   }
+
+  // Colon separators between pairs
+  ctx.fillStyle = fgColor;
+  ctx.font = `${numSize}px InterBold`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const colonY = numY + pillH * 0.45;
+  ctx.fillText(":", w * 0.25, colonY);
+  ctx.fillText(":", w * 0.50, colonY);
+  ctx.fillText(":", w * 0.75, colonY);
 }
 
-// ──────────────────────────────────────────────
-// Bitmap rendering functions
-// ──────────────────────────────────────────────
-
-function drawDigit(ctx, char, x, y, pixelSize, color) {
-  const map = DIGITS[char];
-  if (!map) return;
-  ctx.fillStyle = color;
-  for (let row = 0; row < map.length; row++) {
-    for (let col = 0; col < map[row].length; col++) {
-      if (map[row][col]) {
-        ctx.fillRect(
-          x + col * pixelSize,
-          y + row * pixelSize,
-          pixelSize - 1,
-          pixelSize - 1
-        );
-      }
-    }
-  }
-}
-
-function drawBitmapText(ctx, text, x, y, pixelSize, spacing, color, align) {
-  const chars = text.toUpperCase().split("");
-  const charW = 3 * pixelSize + spacing * pixelSize;
-  const totalW = chars.length * charW - spacing * pixelSize;
-
-  let startX;
-  if (align === "center") {
-    startX = Math.floor(x - totalW / 2);
-  } else {
-    startX = x;
-  }
-
-  ctx.fillStyle = color;
-  for (let i = 0; i < chars.length; i++) {
-    const ch = chars[i];
-    const map = SMALL_CHARS[ch];
-    if (!map) continue;
-    const cx = startX + i * charW;
-    for (let row = 0; row < map.length; row++) {
-      for (let col = 0; col < map[row].length; col++) {
-        if (map[row][col]) {
-          ctx.fillRect(
-            cx + col * pixelSize,
-            y + row * pixelSize,
-            pixelSize,
-            pixelSize
-          );
-        }
-      }
-    }
-  }
+function drawExpired(ctx, w, h, fgColor, message) {
+  const size = Math.round(h * 0.16);
+  ctx.fillStyle = fgColor;
+  ctx.font = `${size}px InterBold`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(message, w / 2, h / 2);
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -370,14 +188,5 @@ function msToTime(ms) {
     hours: Math.floor((totalSeconds % 86400) / 3600),
     minutes: Math.floor((totalSeconds % 3600) / 60),
     seconds: totalSeconds % 60,
-  };
-}
-
-function hexToRgb(hex) {
-  const clean = hex.replace("#", "");
-  return {
-    r: parseInt(clean.substring(0, 2), 16),
-    g: parseInt(clean.substring(2, 4), 16),
-    b: parseInt(clean.substring(4, 6), 16),
   };
 }
