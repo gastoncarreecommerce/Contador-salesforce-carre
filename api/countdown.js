@@ -76,18 +76,13 @@ module.exports = async (req, res) => {
       const imageData = ctx.getImageData(0, 0, width, height);
       const { data } = imageData;
 
-      // Convert RGBA to flat RGB for gifenc
-      const rgb = new Uint8Array(width * height * 3);
-      for (let p = 0; p < width * height; p++) {
-        rgb[p * 3] = data[p * 4];
-        rgb[p * 3 + 1] = data[p * 4 + 1];
-        rgb[p * 3 + 2] = data[p * 4 + 2];
-      }
+      // Convert RGBA to flat RGBA array for gifenc
+      const rgba = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
 
-      const palette = quantize(rgb, 256, { format: "rgb333" });
-      const index = applyPalette(rgb, palette, "rgb333");
+      const palette = quantize(rgba, 256, { format: "rgba4444" });
+      const index = applyPalette(rgba, palette, "rgba4444");
 
-      gif.writeFrame(index, width, height, { palette, delay: 100 });
+      gif.writeFrame(index, width, height, { palette, delay: 1000 });
     }
 
     gif.finish();
