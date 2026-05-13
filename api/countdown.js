@@ -1,9 +1,146 @@
 const { createCanvas } = require("@napi-rs/canvas");
 const { GIFEncoder, quantize, applyPalette } = require("gifenc");
 
+// ──────────────────────────────────────────────
+// 7-segment style digit maps (5 wide x 7 tall)
+// 1 = filled, 0 = empty
+// ──────────────────────────────────────────────
+const DIGITS = {
+  "0": [
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  "1": [
+    [0,0,1,0,0],
+    [0,1,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,1,1,1,0],
+  ],
+  "2": [
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+    [1,0,0,0,0],
+    [1,0,0,0,0],
+    [1,1,1,1,1],
+  ],
+  "3": [
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  "4": [
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+  ],
+  "5": [
+    [1,1,1,1,1],
+    [1,0,0,0,0],
+    [1,0,0,0,0],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  "6": [
+    [1,1,1,1,1],
+    [1,0,0,0,0],
+    [1,0,0,0,0],
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  "7": [
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [0,0,0,1,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+  ],
+  "8": [
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  "9": [
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  ":": [
+    [0,0,0,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,0,0,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,0,0,0,0],
+  ],
+};
+
+// Small 3x5 font for labels
+const SMALL_CHARS = {
+  "D": [[1,1,0],[1,0,1],[1,0,1],[1,0,1],[1,1,0]],
+  "I": [[1,1,1],[0,1,0],[0,1,0],[0,1,0],[1,1,1]],
+  "A": [[0,1,0],[1,0,1],[1,1,1],[1,0,1],[1,0,1]],
+  "S": [[0,1,1],[1,0,0],[0,1,0],[0,0,1],[1,1,0]],
+  "H": [[1,0,1],[1,0,1],[1,1,1],[1,0,1],[1,0,1]],
+  "O": [[0,1,0],[1,0,1],[1,0,1],[1,0,1],[0,1,0]],
+  "R": [[1,1,0],[1,0,1],[1,1,0],[1,0,1],[1,0,1]],
+  "M": [[1,0,1],[1,1,1],[1,1,1],[1,0,1],[1,0,1]],
+  "N": [[1,0,1],[1,1,1],[1,1,1],[1,0,1],[1,0,1]],
+  "E": [[1,1,1],[1,0,0],[1,1,0],[1,0,0],[1,1,1]],
+  "G": [[0,1,1],[1,0,0],[1,0,1],[1,0,1],[0,1,1]],
+  "T": [[1,1,1],[0,1,0],[0,1,0],[0,1,0],[0,1,0]],
+  "L": [[1,0,0],[1,0,0],[1,0,0],[1,0,0],[1,1,1]],
+  "F": [[1,1,1],[1,0,0],[1,1,0],[1,0,0],[1,0,0]],
+  "!": [[0,1,0],[0,1,0],[0,1,0],[0,0,0],[0,1,0]],
+  " ": [[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
+  "P": [[1,1,0],[1,0,1],[1,1,0],[1,0,0],[1,0,0]],
+  "C": [[0,1,1],[1,0,0],[1,0,0],[1,0,0],[0,1,1]],
+  "U": [[1,0,1],[1,0,1],[1,0,1],[1,0,1],[0,1,0]],
+  "V": [[1,0,1],[1,0,1],[1,0,1],[0,1,0],[0,1,0]],
+  "W": [[1,0,1],[1,0,1],[1,1,1],[1,1,1],[1,0,1]],
+  "X": [[1,0,1],[1,0,1],[0,1,0],[1,0,1],[1,0,1]],
+  "Y": [[1,0,1],[1,0,1],[0,1,0],[0,1,0],[0,1,0]],
+  "Z": [[1,1,1],[0,0,1],[0,1,0],[1,0,0],[1,1,1]],
+  "B": [[1,1,0],[1,0,1],[1,1,0],[1,0,1],[1,1,0]],
+  "J": [[0,0,1],[0,0,1],[0,0,1],[1,0,1],[0,1,0]],
+  "K": [[1,0,1],[1,1,0],[1,0,0],[1,1,0],[1,0,1]],
+  "Q": [[0,1,0],[1,0,1],[1,0,1],[1,1,1],[0,1,1]],
+};
+
 /**
  * Countdown Timer GIF Generator for SFMC Emails
- *
  * Usage: GET /countdown?date=2026-05-17T23:59:00&tz=-3
  */
 module.exports = async (req, res) => {
@@ -17,27 +154,14 @@ module.exports = async (req, res) => {
       w = "600",
       h = "200",
       frames = "30",
-      label = "¡TERMINA EN!",
-      font = "Arial",
-      expired = "¡TIEMPO AGOTADO!",
+      label = "TERMINA EN",
+      expired = "TIEMPO AGOTADO",
     } = req.query;
 
     if (!date) {
       return res.status(400).json({
         error: "Missing 'date' parameter",
         usage: "GET /countdown?date=2026-05-17T23:59:00&tz=-3",
-        params: {
-          date: "ISO datetime (required)",
-          tz: "UTC offset hours (default: -3)",
-          bg: "Background hex (default: 004E9A)",
-          fg: "Text hex (default: FFFFFF)",
-          accent: "Label hex (default: FFD700)",
-          w: "Width px (default: 600)",
-          h: "Height px (default: 200)",
-          frames: "Frames/seconds (default: 30)",
-          label: "Top label (default: ¡TERMINA EN!)",
-          expired: "Expired message (default: ¡TIEMPO AGOTADO!)",
-        },
       });
     }
 
@@ -46,14 +170,12 @@ module.exports = async (req, res) => {
     const totalFrames = Math.min(parseInt(frames, 10), 60);
     const tzOffset = parseFloat(tz);
 
-    const bgColor = hexToRgb(bg);
     const fgColor = `#${fg}`;
     const accentColor = `#${accent}`;
+    const bgHex = `#${bg}`;
     const targetMs = parseTargetDate(date, tzOffset);
 
-    // gifenc encoder
     const gif = GIFEncoder();
-
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext("2d");
     const renderNow = Date.now();
@@ -61,27 +183,22 @@ module.exports = async (req, res) => {
     for (let i = 0; i < totalFrames; i++) {
       const adjustedDiff = targetMs - renderNow - i * 1000;
 
-      // Clear
-      ctx.fillStyle = `rgb(${bgColor.r}, ${bgColor.g}, ${bgColor.b})`;
+      // Clear background
+      ctx.fillStyle = bgHex;
       ctx.fillRect(0, 0, width, height);
 
       if (adjustedDiff <= 0) {
-        drawExpired(ctx, width, height, fgColor, accentColor, expired, font);
+        drawBitmapText(ctx, expired, width / 2, height / 2, Math.floor(height / 20), 1, fgColor, "center");
       } else {
         const time = msToTime(adjustedDiff);
-        drawCountdown(ctx, width, height, time, fgColor, accentColor, label, font);
+        drawFrame(ctx, width, height, time, fgColor, accentColor, bgHex, label);
       }
 
-      // Get pixel data
+      // Encode frame
       const imageData = ctx.getImageData(0, 0, width, height);
-      const { data } = imageData;
-
-      // Convert RGBA to flat RGBA array for gifenc
-      const rgba = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-
+      const rgba = new Uint8Array(imageData.data.buffer);
       const palette = quantize(rgba, 256, { format: "rgba4444" });
       const index = applyPalette(rgba, palette, "rgba4444");
-
       gif.writeFrame(index, width, height, { palette, delay: 1000 });
     }
 
@@ -93,7 +210,6 @@ module.exports = async (req, res) => {
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
     res.setHeader("Access-Control-Allow-Origin", "*");
-
     return res.status(200).send(buffer);
   } catch (err) {
     console.error("Countdown error:", err);
@@ -102,75 +218,126 @@ module.exports = async (req, res) => {
 };
 
 // ──────────────────────────────────────────────
-// Drawing
+// Main drawing
 // ──────────────────────────────────────────────
 
-function drawCountdown(ctx, w, h, time, fgColor, accentColor, label, fontFamily) {
+function drawFrame(ctx, w, h, time, fgColor, accentColor, bgHex, label) {
   const { days, hours, minutes, seconds } = time;
 
-  // Top label
-  const labelSize = Math.round(h * 0.13);
-  ctx.fillStyle = accentColor;
-  ctx.font = `bold ${labelSize}px "${fontFamily}", sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.fillText(label, w / 2, h * 0.06);
+  // Layout constants
+  const pixelSize = Math.max(2, Math.floor(h / 28)); // size of each "pixel" in digit
+  const digitW = 5 * pixelSize;
+  const digitH = 7 * pixelSize;
+  const colonW = 5 * pixelSize;
+  const gap = Math.floor(pixelSize * 1.5); // gap between digit pairs
+  const pairGap = Math.floor(pixelSize * 0.5); // gap between two digits in a pair
 
-  const numSize = Math.round(h * 0.32);
-  const unitSize = Math.round(h * 0.09);
-  const numY = h * 0.30;
-  const unitY = numY + numSize + h * 0.02;
+  // Total width: 4 pairs of 2 digits + 3 colons + gaps
+  const totalW = 4 * (2 * digitW + pairGap) + 3 * colonW + 6 * gap;
+  const startX = Math.floor((w - totalW) / 2);
+  const startY = Math.floor(h * 0.25);
 
-  const positions = [0.15, 0.37, 0.59, 0.81];
-  const values = [
-    { num: String(days).padStart(2, "0"), unit: "DIAS" },
-    { num: String(hours).padStart(2, "0"), unit: "HORAS" },
-    { num: String(minutes).padStart(2, "0"), unit: "MIN" },
-    { num: String(seconds).padStart(2, "0"), unit: "SEG" },
+  // Draw label at top
+  const labelPixel = Math.max(1, Math.floor(pixelSize * 0.5));
+  drawBitmapText(ctx, label, w / 2, h * 0.08, labelPixel, 1, accentColor, "center");
+
+  const pairs = [
+    String(days).padStart(2, "0"),
+    String(hours).padStart(2, "0"),
+    String(minutes).padStart(2, "0"),
+    String(seconds).padStart(2, "0"),
   ];
+  const labels = ["DIAS", "HORAS", "MIN", "SEG"];
 
-  // Separators
-  ctx.fillStyle = fgColor;
-  ctx.font = `bold ${numSize}px "${fontFamily}", sans-serif`;
-  ctx.textBaseline = "top";
-  for (const sp of [0.26, 0.48, 0.70]) {
-    ctx.fillText(":", w * sp, numY);
-  }
+  let curX = startX;
 
-  // Numbers + units
-  for (let i = 0; i < 4; i++) {
-    const x = w * positions[i];
+  for (let p = 0; p < 4; p++) {
+    const d1 = pairs[p][0];
+    const d2 = pairs[p][1];
 
     // Pill background
-    const pillW = w * 0.17;
-    const pillH = numSize * 1.3;
-    const pillX = x - pillW / 2;
-    const pillY = numY - numSize * 0.1;
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
-    roundRect(ctx, pillX, pillY, pillW, pillH, 8);
+    const pillPad = Math.floor(pixelSize * 0.8);
+    const pillW = 2 * digitW + pairGap + 2 * pillPad;
+    const pillH = digitH + 2 * pillPad;
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    roundRect(ctx, curX - pillPad, startY - pillPad, pillW, pillH, pixelSize);
     ctx.fill();
 
-    // Number
-    ctx.fillStyle = fgColor;
-    ctx.font = `bold ${numSize}px "${fontFamily}", sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.fillText(values[i].num, x, numY);
+    // First digit
+    drawDigit(ctx, d1, curX, startY, pixelSize, fgColor);
+    curX += digitW + pairGap;
 
-    // Unit
-    ctx.fillStyle = accentColor;
-    ctx.font = `bold ${unitSize}px "${fontFamily}", sans-serif`;
-    ctx.fillText(values[i].unit, x, unitY);
+    // Second digit
+    drawDigit(ctx, d2, curX, startY, pixelSize, fgColor);
+    curX += digitW + pillPad;
+
+    // Unit label below
+    const labelY = startY + digitH + Math.floor(pixelSize * 1.5);
+    const labelCenterX = curX - pillPad - pillW / 2;
+    drawBitmapText(ctx, labels[p], labelCenterX, labelY, Math.max(1, Math.floor(pixelSize * 0.4)), 1, accentColor, "center");
+
+    // Colon separator (except after last)
+    if (p < 3) {
+      curX += gap;
+      drawDigit(ctx, ":", curX, startY, pixelSize, fgColor);
+      curX += colonW + gap;
+    }
   }
 }
 
-function drawExpired(ctx, w, h, fgColor, accentColor, message, fontFamily) {
-  const size = Math.round(h * 0.18);
-  ctx.fillStyle = fgColor;
-  ctx.font = `bold ${size}px "${fontFamily}", sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(message, w / 2, h / 2);
+// ──────────────────────────────────────────────
+// Bitmap rendering functions
+// ──────────────────────────────────────────────
+
+function drawDigit(ctx, char, x, y, pixelSize, color) {
+  const map = DIGITS[char];
+  if (!map) return;
+  ctx.fillStyle = color;
+  for (let row = 0; row < map.length; row++) {
+    for (let col = 0; col < map[row].length; col++) {
+      if (map[row][col]) {
+        ctx.fillRect(
+          x + col * pixelSize,
+          y + row * pixelSize,
+          pixelSize - 1,
+          pixelSize - 1
+        );
+      }
+    }
+  }
+}
+
+function drawBitmapText(ctx, text, x, y, pixelSize, spacing, color, align) {
+  const chars = text.toUpperCase().split("");
+  const charW = 3 * pixelSize + spacing * pixelSize;
+  const totalW = chars.length * charW - spacing * pixelSize;
+
+  let startX;
+  if (align === "center") {
+    startX = Math.floor(x - totalW / 2);
+  } else {
+    startX = x;
+  }
+
+  ctx.fillStyle = color;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const map = SMALL_CHARS[ch];
+    if (!map) continue;
+    const cx = startX + i * charW;
+    for (let row = 0; row < map.length; row++) {
+      for (let col = 0; col < map[row].length; col++) {
+        if (map[row][col]) {
+          ctx.fillRect(
+            cx + col * pixelSize,
+            y + row * pixelSize,
+            pixelSize,
+            pixelSize
+          );
+        }
+      }
+    }
+  }
 }
 
 function roundRect(ctx, x, y, w, h, r) {
