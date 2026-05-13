@@ -1,58 +1,31 @@
 const fs = require("fs");
 const path = require("path");
-const { createCanvas, GlobalFonts } = require("@napi-rs/canvas");
+const { Resvg } = require("@resvg/resvg-js");
 const { GIFEncoder, quantize, applyPalette } = require("gifenc");
 
-// ──────────────────────────────────────────────
-// Font registration — try multiple paths
-// ──────────────────────────────────────────────
-let fontLoaded = false;
-let registeredName = "";
+// Load font as base64 for SVG embedding
+let fontBase64 = "";
 const fontPaths = [
   path.join(__dirname, "..", "fonts", "Inter-Bold.ttf"),
   path.join(process.cwd(), "fonts", "Inter-Bold.ttf"),
   "/var/task/fonts/Inter-Bold.ttf",
 ];
-
 for (const fp of fontPaths) {
   try {
     if (fs.existsSync(fp)) {
-      // Try registerFromPath first
-      GlobalFonts.registerFromPath(fp, "Countdown");
-      
-      // Check if it actually registered
-      const families = GlobalFonts.families;
-      if (families && families.length > 0) {
-        registeredName = "Countdown";
-        fontLoaded = true;
-      } else {
-        // Fallback: register from buffer with different approach
-        const buf = fs.readFileSync(fp);
-        GlobalFonts.register(buf);
-        // Font registers under its internal name "Inter"
-        registeredName = "Inter";
-        fontLoaded = true;
-      }
+      fontBase64 = fs.readFileSync(fp).toString("base64");
       break;
     }
-  } catch (e) {
-    // try next path
-  }
+  } catch (e) {}
 }
 
 module.exports = async (req, res) => {
   try {
-    // Debug mode: /countdown?debug=1
     if (req.query.debug === "1") {
-      const info = {
-        fontLoaded,
-        registeredName,
-        triedPaths: fontPaths.map((fp) => ({ path: fp, exists: fs.existsSync(fp) })),
-        cwd: process.cwd(),
-        dirname: __dirname,
-        fontsRegistered: GlobalFonts.families,
-      };
-      return res.status(200).json(info);
+      return res.status(200).json({
+        fontLoaded: fontBase64.length > 0,
+        fontBytes: fontBase64.length,
+      });
     }
 
     const {
@@ -79,37 +52,25 @@ module.exports = async (req, res) => {
     const height = parseInt(h, 10);
     const totalFrames = Math.min(parseInt(frames, 10), 60);
     const tzOffset = parseFloat(tz);
-
-    const fgColor = `#${fg}`;
-    const accentColor = `#${accent}`;
-    const bgHex = `#${bg}`;
     const targetMs = parseTargetDate(date, tzOffset);
 
-    // Pick font family name
-    const fontFamily = fontLoaded ? registeredName : "sans-serif";
-
     const gif = GIFEncoder();
-    const canvas = createCanvas(width, height);
-    const ctx = canvas.getContext("2d");
     const renderNow = Date.now();
 
     for (let i = 0; i < totalFrames; i++) {
       const adjustedDiff = targetMs - renderNow - i * 1000;
+      const time = adjustedDiff > 0 ? msToTime(adjustedDiff) : null;
 
-      ctx.fillStyle = bgHex;
-      ctx.fillRect(0, 0, width, height);
+      const svg = buildSVG(width, height, time, bg, fg, accent, label, expired);
 
-      if (adjustedDiff <= 0) {
-        drawExpired(ctx, width, height, fgColor, expired, fontFamily);
-      } else {
-        const time = msToTime(adjustedDiff);
-        drawCountdown(ctx, width, height, time, fgColor, accentColor, label, fontFamily);
-      }
+      const resvg = new Resvg(svg, {
+        fitTo: { mode: "width", value: width },
+      });
+      const pngData = resvg.render();
+      const pixels = pngData.pixels; // Uint8Array RGBA
 
-      const imageData = ctx.getImageData(0, 0, width, height);
-      const rgba = new Uint8Array(imageData.data.buffer);
-      const palette = quantize(rgba, 256, { format: "rgba4444" });
-      const index = applyPalette(rgba, palette, "rgba4444");
+      const palette = quantize(pixels, 256, { format: "rgba4444" });
+      const index = applyPalette(pixels, palette, "rgba4444");
       gif.writeFrame(index, width, height, { palette, delay: 1000 });
     }
 
@@ -129,89 +90,98 @@ module.exports = async (req, res) => {
 };
 
 // ──────────────────────────────────────────────
-// Drawing
+// SVG Builder
 // ──────────────────────────────────────────────
 
-function drawCountdown(ctx, w, h, time, fgColor, accentColor, label, fontFamily) {
+function buildSVG(w, h, time, bg, fg, accent, label, expiredMsg) {
+  const fontFace = fontBase64
+    ? `<defs><style>
+        @font-face {
+          font-family: 'CF';
+          src: url('data:font/ttf;base64,${fontBase64}') format('truetype');
+          font-weight: bold;
+        }
+      </style></defs>`
+    : "";
+
+  const fontFamily = fontBase64 ? "CF" : "Arial, Helvetica, sans-serif";
+
+  if (!time) {
+    // Expired state
+    const expSize = Math.round(h * 0.18);
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      ${fontFace}
+      <rect width="${w}" height="${h}" fill="#${bg}" rx="0"/>
+      <text x="${w / 2}" y="${h / 2}" text-anchor="middle" dominant-baseline="central"
+            font-family="${fontFamily}" font-weight="bold" font-size="${expSize}" fill="#${fg}">
+        ${escXml(expiredMsg)}
+      </text>
+    </svg>`;
+  }
+
   const { days, hours, minutes, seconds } = time;
+  const labelSize = Math.round(h * 0.12);
+  const numSize = Math.round(h * 0.36);
+  const unitSize = Math.round(h * 0.09);
+  const colonSize = Math.round(h * 0.30);
 
-  // Label
-  const labelSize = Math.round(h * 0.11);
-  ctx.fillStyle = accentColor;
-  ctx.font = `bold ${labelSize}px "${fontFamily}"`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.fillText(label, w / 2, h * 0.05);
-
-  // Number config
-  const numSize = Math.round(h * 0.34);
-  const unitSize = Math.round(h * 0.085);
   const positions = [0.125, 0.375, 0.625, 0.875];
+  const colonPositions = [0.25, 0.50, 0.75];
   const values = [
-    { num: String(days).padStart(2, "0"), unit: "DÍAS" },
-    { num: String(hours).padStart(2, "0"), unit: "HRS" },
-    { num: String(minutes).padStart(2, "0"), unit: "MIN" },
-    { num: String(seconds).padStart(2, "0"), unit: "SEG" },
+    { num: pad(days), unit: "DÍAS" },
+    { num: pad(hours), unit: "HRS" },
+    { num: pad(minutes), unit: "MIN" },
+    { num: pad(seconds), unit: "SEG" },
   ];
 
   const pillTop = h * 0.26;
   const pillW = w * 0.19;
   const pillH = h * 0.50;
+  const pillR = 10;
 
+  let elements = "";
+
+  // Background
+  elements += `<rect width="${w}" height="${h}" fill="#${bg}"/>`;
+
+  // Label
+  elements += `<text x="${w / 2}" y="${h * 0.05 + labelSize * 0.8}"
+    text-anchor="middle" font-family="${fontFamily}" font-weight="bold"
+    font-size="${labelSize}" fill="#${accent}">${escXml(label)}</text>`;
+
+  // Pills + numbers + units
   for (let i = 0; i < 4; i++) {
     const cx = w * positions[i];
+    const px = cx - pillW / 2;
 
     // Pill
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
-    roundRect(ctx, cx - pillW / 2, pillTop, pillW, pillH, 10);
-    ctx.fill();
+    elements += `<rect x="${px}" y="${pillTop}" width="${pillW}" height="${pillH}"
+      rx="${pillR}" fill="rgba(0,0,0,0.25)"/>`;
 
     // Number
-    ctx.fillStyle = fgColor;
-    ctx.font = `bold ${numSize}px "${fontFamily}"`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(values[i].num, cx, pillTop + pillH * 0.48);
+    elements += `<text x="${cx}" y="${pillTop + pillH * 0.52}"
+      text-anchor="middle" dominant-baseline="central"
+      font-family="${fontFamily}" font-weight="bold"
+      font-size="${numSize}" fill="#${fg}">${values[i].num}</text>`;
 
     // Unit
-    ctx.fillStyle = accentColor;
-    ctx.font = `bold ${unitSize}px "${fontFamily}"`;
-    ctx.textBaseline = "top";
-    ctx.fillText(values[i].unit, cx, pillTop + pillH + h * 0.03);
+    elements += `<text x="${cx}" y="${pillTop + pillH + h * 0.03 + unitSize * 0.9}"
+      text-anchor="middle" font-family="${fontFamily}" font-weight="bold"
+      font-size="${unitSize}" fill="#${accent}">${values[i].unit}</text>`;
   }
 
   // Colons
-  ctx.fillStyle = fgColor;
-  ctx.font = `bold ${numSize}px "${fontFamily}"`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const colonY = pillTop + pillH * 0.48;
-  ctx.fillText(":", w * 0.25, colonY);
-  ctx.fillText(":", w * 0.50, colonY);
-  ctx.fillText(":", w * 0.75, colonY);
-}
+  for (const cp of colonPositions) {
+    elements += `<text x="${w * cp}" y="${pillTop + pillH * 0.48}"
+      text-anchor="middle" dominant-baseline="central"
+      font-family="${fontFamily}" font-weight="bold"
+      font-size="${colonSize}" fill="#${fg}">:</text>`;
+  }
 
-function drawExpired(ctx, w, h, fgColor, message, fontFamily) {
-  const size = Math.round(h * 0.16);
-  ctx.fillStyle = fgColor;
-  ctx.font = `bold ${size}px "${fontFamily}"`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(message, w / 2, h / 2);
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    ${fontFace}
+    ${elements}
+  </svg>`;
 }
 
 // ──────────────────────────────────────────────
@@ -231,4 +201,12 @@ function msToTime(ms) {
     minutes: Math.floor((totalSeconds % 3600) / 60),
     seconds: totalSeconds % 60,
   };
+}
+
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+
+function escXml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
